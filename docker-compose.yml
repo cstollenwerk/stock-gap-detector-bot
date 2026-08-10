@@ -1,0 +1,12 @@
+services:
+  bot:
+    container_name: stock-gap-detector-bot
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
