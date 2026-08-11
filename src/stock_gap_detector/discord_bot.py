@@ -95,11 +95,13 @@ def build_gapreport_command(bot: StockGapDiscordBot, command_name: str) -> app_c
 
 
 async def send_report(channel, report_text: str, candidate_count: int, trigger: str) -> None:
-    header = f"**{format_post_title()}** ({trigger})\nCandidates: `{candidate_count}`"
+    _ = candidate_count
+    _ = trigger
+    header = f"# {format_post_title()}"
     ticker_lists = extract_ticker_lists_section(report_text)
     payload = BytesIO(report_text.encode("utf-8"))
     await channel.send(
-        f"{header}\nFull report attached.",
+        header,
         file=discord.File(payload, filename=REPORT_FILE.with_suffix(".txt").name),
     )
     for message in format_ticker_list_messages(ticker_lists):
@@ -134,9 +136,10 @@ def format_ticker_list_messages(ticker_lists: str) -> list[str]:
 
     messages: list[str] = []
     for label in TICKER_LIST_LABELS:
-        section = sections.get(label)
-        if not section:
+        tickers = sections.get(label)
+        if tickers is None:
             continue
+        section = format_ticker_section(label, tickers)
         messages.extend(split_message(section))
     return messages or split_message(ticker_lists)
 
@@ -154,8 +157,33 @@ def extract_named_ticker_sections(ticker_lists: str) -> dict[str, str]:
             if lines[next_index].strip() in TICKER_LIST_LABELS:
                 end_index = next_index
                 break
-        sections[label] = "\n".join(lines[index:end_index]).strip()
+        sections[label] = extract_code_block_text(lines[index + 1 : end_index])
     return sections
+
+
+def extract_code_block_text(lines: list[str]) -> str:
+    ticker_lines = [line.strip() for line in lines if line.strip() and line.strip() != "```"]
+    return " ".join(ticker_lines) if ticker_lines else "No matches."
+
+
+def format_ticker_section(label: str, tickers: str) -> str:
+    ticker_count = count_tickers(tickers)
+    return "\n".join(
+        [
+            f"## {label}",
+            f"`{ticker_count}`",
+            "",
+            "```",
+            tickers,
+            "```",
+        ]
+    )
+
+
+def count_tickers(tickers: str) -> int:
+    if tickers == "No matches.":
+        return 0
+    return len([ticker for ticker in tickers.split(",") if ticker.strip()])
 
 
 def split_message(text: str, limit: int = REPORT_INLINE_LIMIT) -> list[str]:
