@@ -61,6 +61,7 @@ class DiscordConfig:
     channel_id: int
     guild_id: int | None = None
     command_name: str = "gapreport"
+    attach_full_report: bool = False
     report_time: time = time(hour=20, minute=0, tzinfo=EASTERN_TZ)
 
     @classmethod
@@ -74,7 +75,14 @@ class DiscordConfig:
 
         guild_id = env_int("STOCK_GAP_DETECTOR_DISCORD_GUILD_ID", 0) or None
         command_name = env_value("STOCK_GAP_DETECTOR_DISCORD_COMMAND_NAME") or "gapreport"
-        return cls(token=token, channel_id=channel_id, guild_id=guild_id, command_name=command_name)
+        attach_full_report = env_bool("STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT", False)
+        return cls(
+            token=token,
+            channel_id=channel_id,
+            guild_id=guild_id,
+            command_name=command_name,
+            attach_full_report=attach_full_report,
+        )
 
 
 def env_value(*names: str) -> str:
@@ -138,6 +146,17 @@ def env_float(name: str, default: float) -> float:
         return max(0.0, float(value))
     except ValueError:
         return default
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = env_value(name).lower()
+    if not value:
+        return default
+    if value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if value in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def parse_tickers(value: str) -> tuple[str, ...]:

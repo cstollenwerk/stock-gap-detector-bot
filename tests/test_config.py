@@ -54,6 +54,7 @@ class ConfigTests(unittest.TestCase):
                 "STOCK_GAP_DETECTOR_DISCORD_TOKEN": "token",
                 "STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID": "123",
                 "STOCK_GAP_DETECTOR_DISCORD_GUILD_ID": "456",
+                "STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT": "true",
             },
             clear=True,
         ):
@@ -62,6 +63,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.token, "token")
         self.assertEqual(config.channel_id, 123)
         self.assertEqual(config.guild_id, 456)
+        self.assertTrue(config.attach_full_report)
 
 
 if __name__ == "__main__":

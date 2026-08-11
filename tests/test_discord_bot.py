@@ -75,12 +75,12 @@ class DiscordReportTests(unittest.IsolatedAsyncioTestCase):
     def test_format_ticker_section_uses_heading_count_and_code_block(self):
         section = format_ticker_section("Near Support Gaps", "AAPL, MSFT")
 
-        self.assertEqual(section, "## Near Support Gaps\n`2`\n\n```\nAAPL, MSFT\n```")
+        self.assertEqual(section, "## Near Support Gaps `2`\n\n```\nAAPL, MSFT\n```")
 
     def test_count_tickers_handles_no_matches(self):
         self.assertEqual(count_tickers("No matches."), 0)
 
-    async def test_send_report_posts_ticker_lists_and_attaches_full_txt_report(self):
+    async def test_send_report_posts_title_and_ticker_lists_without_attachment(self):
         channel = FakeChannel()
         report = "\n".join(
             [
@@ -110,11 +110,21 @@ class DiscordReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("test", channel.messages[0]["content"])
         self.assertNotIn("Candidates:", channel.messages[0]["content"])
         self.assertNotIn("Full report attached.", channel.messages[0]["content"])
-        self.assertEqual(channel.messages[0]["file"].filename, "gap_report.txt")
-        self.assertEqual(channel.messages[1]["content"], "## Near Support Gaps\n`2`\n\n```\nAAPL, MSFT\n```")
+        self.assertIsNone(channel.messages[0]["file"])
+        self.assertEqual(channel.messages[1]["content"], "## Near Support Gaps `2`\n\n```\nAAPL, MSFT\n```")
         self.assertIsNone(channel.messages[1]["file"])
-        self.assertEqual(channel.messages[2]["content"], "## Near Resistance Gaps\n`2`\n\n```\nTSLA, NVDA\n```")
+        self.assertEqual(channel.messages[2]["content"], "## Near Resistance Gaps `2`\n\n```\nTSLA, NVDA\n```")
         self.assertIsNone(channel.messages[2]["file"])
+
+    async def test_send_report_can_attach_full_txt_report_when_enabled(self):
+        channel = FakeChannel()
+        report = sample_report()
+
+        await send_report(channel, report, candidate_count=2, trigger="test", attach_full_report=True)
+
+        self.assertIn("# Gap Candidates for", channel.messages[0]["content"])
+        self.assertEqual(channel.messages[0]["file"].filename, "gap_report.txt")
+        self.assertEqual(channel.messages[1]["content"], "## Near Support Gaps `2`\n\n```\nAAPL, MSFT\n```")
 
     def test_format_channel_messages_posts_support_and_resistance_separately(self):
         messages = format_channel_messages(
@@ -138,9 +148,9 @@ class DiscordReportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(messages), 2)
         self.assertIn("## Near Support Gaps", messages[0])
-        self.assertIn("`2`", messages[0])
+        self.assertIn("## Near Support Gaps `2`", messages[0])
         self.assertNotIn("Near Resistance Gaps", messages[0])
-        self.assertEqual(messages[1], "## Near Resistance Gaps\n`2`\n\n```\nTSLA, NVDA\n```")
+        self.assertEqual(messages[1], "## Near Resistance Gaps `2`\n\n```\nTSLA, NVDA\n```")
 
     def test_format_channel_messages_splits_oversized_ticker_section(self):
         tickers = ", ".join(f"TICK{i}" for i in range(700))
@@ -158,6 +168,30 @@ class FakeChannel:
 
     async def send(self, content, *, file=None):
         self.messages.append({"content": content, "file": file})
+
+
+def sample_report() -> str:
+    return "\n".join(
+        [
+            "# Stock Gap Detector",
+            "",
+            "## Sector Breakdown",
+            "",
+            "full breakdown",
+            "",
+            "## Ticker Lists",
+            "",
+            "Near Support Gaps",
+            "```",
+            "AAPL, MSFT",
+            "```",
+            "",
+            "Near Resistance Gaps",
+            "```",
+            "TSLA, NVDA",
+            "```",
+        ]
+    )
 
 
 if __name__ == "__main__":

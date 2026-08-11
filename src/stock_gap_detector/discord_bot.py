@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from stock_gap_detector.config import EASTERN_TZ, DiscordConfig, REPORT_FILE
+from stock_gap_detector.config import EASTERN_TZ, REPORT_FILE, DiscordConfig
 
 
 REPORT_INLINE_LIMIT = 1800
@@ -73,7 +73,13 @@ class StockGapDiscordBot(discord.Client):
         async with self.report_lock:
             report_text, candidate_count = await asyncio.to_thread(self.report_runner)
             channel = await self.resolve_report_channel()
-            await send_report(channel, report_text, candidate_count, trigger)
+            await send_report(
+                channel,
+                report_text,
+                candidate_count,
+                trigger,
+                attach_full_report=self.discord_config.attach_full_report,
+            )
             logging.info("Posted %s report with %s candidate(s).", trigger, candidate_count)
             return f"Posted the stock gap report to <#{self.discord_config.channel_id}> with {candidate_count} candidate(s)."
 
@@ -94,16 +100,26 @@ def build_gapreport_command(bot: StockGapDiscordBot, command_name: str) -> app_c
     return gapreport
 
 
-async def send_report(channel, report_text: str, candidate_count: int, trigger: str) -> None:
+async def send_report(
+    channel,
+    report_text: str,
+    candidate_count: int,
+    trigger: str,
+    *,
+    attach_full_report: bool = False,
+) -> None:
     _ = candidate_count
     _ = trigger
     header = f"# {format_post_title()}"
     ticker_lists = extract_ticker_lists_section(report_text)
-    payload = BytesIO(report_text.encode("utf-8"))
-    await channel.send(
-        header,
-        file=discord.File(payload, filename=REPORT_FILE.with_suffix(".txt").name),
-    )
+    if attach_full_report:
+        await channel.send(
+            header,
+            file=discord.File(BytesIO(report_text.encode("utf-8")), filename=REPORT_FILE.with_suffix(".txt").name),
+        )
+    else:
+        await channel.send(header)
+
     for message in format_ticker_list_messages(ticker_lists):
         await channel.send(message)
 
@@ -170,8 +186,7 @@ def format_ticker_section(label: str, tickers: str) -> str:
     ticker_count = count_tickers(tickers)
     return "\n".join(
         [
-            f"## {label}",
-            f"`{ticker_count}`",
+            f"## {label} `{ticker_count}`",
             "",
             "```",
             tickers,

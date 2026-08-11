@@ -21,6 +21,7 @@ STOCK_GAP_DETECTOR_DB_PASSWORD=put_the_password_here
 
 STOCK_GAP_DETECTOR_DISCORD_TOKEN=put_the_discord_bot_token_here
 STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID=123456789012345678
+STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT=false
 
 # Optional, but useful while developing because guild slash commands sync faster.
 STOCK_GAP_DETECTOR_DISCORD_GUILD_ID=123456789012345678
@@ -83,9 +84,9 @@ Create a Discord application and bot token, invite the bot to your server, and
 set `STOCK_GAP_DETECTOR_DISCORD_TOKEN` plus
 `STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID` in `.env`.
 
-Discord posts show the ticker-list section in the channel with a dated title,
-and attach the full report as `gap_report.txt` for the sector breakdown and
-candidate details.
+Discord posts show a dated title, then the near-support and near-resistance
+ticker lists. To also attach the full report as `gap_report.txt`, set
+`STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT=true`.
 
 The bot registers a `/gapreport` slash command. If
 `STOCK_GAP_DETECTOR_DISCORD_GUILD_ID` is set, the command syncs to that server
