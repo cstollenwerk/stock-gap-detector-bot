@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from io import BytesIO
 from typing import Callable
 
@@ -9,10 +10,11 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from stock_gap_detector.config import DiscordConfig, REPORT_FILE
+from stock_gap_detector.config import EASTERN_TZ, DiscordConfig, REPORT_FILE
 
 
 REPORT_INLINE_LIMIT = 1800
+TICKER_LISTS_HEADER = "## Ticker Lists"
 ReportRunner = Callable[[], tuple[str, int]]
 
 
@@ -92,16 +94,41 @@ def build_gapreport_command(bot: StockGapDiscordBot, command_name: str) -> app_c
 
 
 async def send_report(channel, report_text: str, candidate_count: int, trigger: str) -> None:
-    header = f"**Stock Gap Detector** ({trigger})\nCandidates: `{candidate_count}`"
-    if len(header) + len(report_text) + 2 <= REPORT_INLINE_LIMIT:
-        await channel.send(f"{header}\n\n{report_text}")
-        return
-
+    header = f"**{format_post_title()}** ({trigger})\nCandidates: `{candidate_count}`"
+    ticker_lists = extract_ticker_lists_section(report_text)
+    message = format_channel_message(header, ticker_lists)
     payload = BytesIO(report_text.encode("utf-8"))
     await channel.send(
-        header,
-        file=discord.File(payload, filename=REPORT_FILE.name),
+        message,
+        file=discord.File(payload, filename=REPORT_FILE.with_suffix(".txt").name),
     )
+
+
+def extract_ticker_lists_section(report_text: str) -> str:
+    _, separator, ticker_lists = report_text.partition(TICKER_LISTS_HEADER)
+    if not separator:
+        return report_text.strip()
+    return f"{TICKER_LISTS_HEADER}{ticker_lists}".strip()
+
+
+def format_channel_message(header: str, ticker_lists: str) -> str:
+    message = f"{header}\n\n{ticker_lists}"
+    if len(message) <= REPORT_INLINE_LIMIT:
+        return message
+    return f"{header}\n\nTicker lists are attached because they are too long for one Discord message."
+
+
+def format_post_title(now: datetime | None = None) -> str:
+    post_time = now.astimezone(EASTERN_TZ) if now else datetime.now(EASTERN_TZ)
+    return f"Gap Candidates for {post_time.strftime('%A %B')} {ordinal_day(post_time.day)}, {post_time.year}"
+
+
+def ordinal_day(day: int) -> str:
+    if 10 <= day % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
 
 
 def run_discord_bot(discord_config: DiscordConfig, report_runner: ReportRunner) -> None:

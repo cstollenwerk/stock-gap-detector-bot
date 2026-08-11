@@ -83,6 +83,10 @@ Create a Discord application and bot token, invite the bot to your server, and
 set `STOCK_GAP_DETECTOR_DISCORD_TOKEN` plus
 `STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID` in `.env`.
 
+Discord posts show the ticker-list section in the channel with a dated title,
+and attach the full report as `gap_report.txt` for the sector breakdown and
+candidate details.
+
 The bot registers a `/gapreport` slash command. If
 `STOCK_GAP_DETECTOR_DISCORD_GUILD_ID` is set, the command syncs to that server
 quickly; without it, the command is registered globally and Discord may take
