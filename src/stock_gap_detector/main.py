@@ -15,6 +15,7 @@ from stock_gap_detector.detector import GapCandidate, GapDetector
 
 
 MIN_ATR_PCT = 0.05
+MIN_MARKET_CAP = 1_000_000_000
 
 
 def configure_logging() -> None:
@@ -38,6 +39,8 @@ def run_once(config: Config, *, end_date: date | None = None) -> list[GapCandida
         tickers=config.tickers,
         end_date=end_date,
         lookback_days=config.lookback_days,
+        min_atr_pct=MIN_ATR_PCT if not config.tickers else None,
+        min_market_cap=MIN_MARKET_CAP,
     )
     ticker_count = int(candles["ticker"].nunique()) if not candles.empty else 0
     logging.info("Loaded %s candle row(s) for %s ticker(s).", len(candles), ticker_count)

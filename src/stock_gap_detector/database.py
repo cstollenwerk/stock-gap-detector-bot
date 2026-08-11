@@ -33,15 +33,33 @@ class CandleDatabase:
         with self.connect() as connection:
             connection.execute("SELECT 1").fetchone()
 
-    def load_active_tickers(self) -> list[str]:
+    def load_active_tickers(
+        self,
+        *,
+        min_atr_pct: float | None = None,
+        min_market_cap: int | None = None,
+    ) -> list[str]:
+        atr_filter = ""
+        market_cap_filter = ""
+        params: list[float | int] = []
+        if min_atr_pct is not None:
+            atr_filter = "AND atr_14_percent >= %s"
+            params.append(min_atr_pct * 100)
+        if min_market_cap is not None:
+            market_cap_filter = "AND market_cap >= %s"
+            params.append(min_market_cap)
+
         with self.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT symbol
                 FROM tickers
                 WHERE active = true
+                {atr_filter}
+                {market_cap_filter}
                 ORDER BY symbol
-                """
+                """,
+                tuple(params),
             ).fetchall()
         return [str(row["symbol"]).strip().upper() for row in rows if str(row["symbol"]).strip()]
 
@@ -95,23 +113,40 @@ class CandleDatabase:
         tickers: list[str] | tuple[str, ...] | None,
         end_date: date | None,
         lookback_days: int,
+        min_atr_pct: float | None = None,
+        min_market_cap: int | None = None,
     ) -> pd.DataFrame:
-        resolved_tickers = sorted(set(tickers or self.load_active_tickers()))
+        resolved_tickers = sorted(
+            set(tickers or self.load_active_tickers(min_atr_pct=min_atr_pct, min_market_cap=min_market_cap))
+        )
         if not resolved_tickers:
             logging.warning("No tickers were available for candle loading.")
             return pd.DataFrame(columns=BAR_COLUMNS)
 
         resolved_end_date = end_date or latest_completed_trading_day()
         start_date = resolved_end_date - timedelta(days=lookback_days)
-        return self.load_candles(resolved_tickers, start_date, resolved_end_date)
+        return self.load_candles(resolved_tickers, start_date, resolved_end_date, min_market_cap=min_market_cap)
 
-    def load_candles(self, tickers: list[str], start_date: date, end_date: date) -> pd.DataFrame:
+    def load_candles(
+        self,
+        tickers: list[str],
+        start_date: date,
+        end_date: date,
+        *,
+        min_market_cap: int | None = None,
+    ) -> pd.DataFrame:
         if not tickers:
             return pd.DataFrame(columns=BAR_COLUMNS)
 
+        market_cap_filter = ""
+        params: list[object] = [tickers, start_date, end_date]
+        if min_market_cap is not None:
+            market_cap_filter = "AND t.market_cap >= %s"
+            params.append(min_market_cap)
+
         with self.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT
                     o.date::text AS date,
                     t.symbol AS ticker,
@@ -126,9 +161,10 @@ class CandleDatabase:
                 WHERE t.symbol = ANY(%s)
                     AND o.date >= %s
                     AND o.date <= %s
+                    {market_cap_filter}
                 ORDER BY t.symbol, o.date
                 """,
-                (tickers, start_date, end_date),
+                tuple(params),
             ).fetchall()
 
         if not rows:

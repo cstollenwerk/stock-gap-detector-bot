@@ -62,6 +62,26 @@ class DatabaseTests(unittest.TestCase):
 
     @patch("stock_gap_detector.database.dict_row", object())
     @patch("stock_gap_detector.database.psycopg")
+    def test_load_active_tickers_can_filter_by_database_atr_percent_and_market_cap(self, psycopg):
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        connection.execute.return_value.fetchall.return_value = [{"symbol": "VRT"}]
+        psycopg.connect.return_value = connection
+
+        tickers = CandleDatabase("postgresql://example/candle_db").load_active_tickers(
+            min_atr_pct=0.05,
+            min_market_cap=1_000_000_000,
+        )
+
+        query, params = connection.execute.call_args.args
+        self.assertEqual(tickers, ["VRT"])
+        self.assertIn("atr_14_percent", query)
+        self.assertIn("market_cap", query)
+        self.assertEqual(params, (5.0, 1_000_000_000))
+
+    @patch("stock_gap_detector.database.dict_row", object())
+    @patch("stock_gap_detector.database.psycopg")
     def test_load_ticker_groups_reads_primary_theme_and_sector(self, psycopg):
         connection = Mock()
         connection.__enter__ = Mock(return_value=connection)
@@ -111,6 +131,26 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertEqual(bars["ticker"].tolist(), ["AAPL"])
         connection.execute.assert_called_once()
+
+    @patch("stock_gap_detector.database.dict_row", object())
+    @patch("stock_gap_detector.database.psycopg")
+    def test_load_candles_can_filter_by_market_cap(self, psycopg):
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        connection.execute.return_value.fetchall.return_value = []
+        psycopg.connect.return_value = connection
+
+        CandleDatabase("postgresql://example/candle_db").load_candles(
+            ["AAPL"],
+            date(2026, 7, 1),
+            date(2026, 7, 15),
+            min_market_cap=1_000_000_000,
+        )
+
+        query, params = connection.execute.call_args.args
+        self.assertIn("t.market_cap >= %s", query)
+        self.assertEqual(params, (["AAPL"], date(2026, 7, 1), date(2026, 7, 15), 1_000_000_000))
 
 
 if __name__ == "__main__":
