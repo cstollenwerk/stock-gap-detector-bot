@@ -127,16 +127,72 @@ class CandleDatabase:
         min_atr_pct: float | None = None,
         min_market_cap: int | None = None,
     ) -> pd.DataFrame:
-        resolved_tickers = sorted(
-            set(tickers or self.load_active_tickers(min_atr_pct=min_atr_pct, min_market_cap=min_market_cap))
-        )
-        if not resolved_tickers:
-            logging.warning("No tickers were available for candle loading.")
-            return pd.DataFrame(columns=BAR_COLUMNS)
-
         resolved_end_date = end_date or latest_completed_trading_day()
         start_date = resolved_end_date - timedelta(days=lookback_days)
-        return self.load_candles(resolved_tickers, start_date, resolved_end_date, min_market_cap=min_market_cap)
+
+        if tickers:
+            resolved_tickers = sorted(set(tickers))
+            return self.load_candles(resolved_tickers, start_date, resolved_end_date, min_market_cap=min_market_cap)
+
+        return self.load_screened_candles(
+            start_date,
+            resolved_end_date,
+            min_atr_pct=min_atr_pct,
+            min_market_cap=min_market_cap,
+        )
+
+    def load_screened_candles(
+        self,
+        start_date: date,
+        end_date: date,
+        *,
+        min_atr_pct: float | None = None,
+        min_market_cap: int | None = None,
+    ) -> pd.DataFrame:
+        atr_filter = ""
+        market_cap_filter = ""
+        params: list[object] = [start_date, end_date]
+        if min_atr_pct is not None:
+            atr_filter = "AND t.atr_14_percent >= %s"
+            params.append(min_atr_pct * 100)
+        if min_market_cap is not None:
+            market_cap_filter = "AND t.market_cap >= %s"
+            params.append(min_market_cap)
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    o.date::text AS date,
+                    t.symbol AS ticker,
+                    o.open::double precision AS open,
+                    o.high::double precision AS high,
+                    o.low::double precision AS low,
+                    o.close::double precision AS close,
+                    o.adj_close::double precision AS adj_close,
+                    o.volume,
+                    t.atr_14::double precision AS atr_14,
+                    t.atr_14_percent::double precision AS atr_14_percent
+                FROM tickers t
+                JOIN tickers_ohlcv o ON o.ticker_id = t.id
+                WHERE t.active = true
+                    AND o.date >= %s
+                    AND o.date <= %s
+                    {atr_filter}
+                    {market_cap_filter}
+                ORDER BY t.symbol, o.date
+                """,
+                tuple(params),
+            ).fetchall()
+
+        if not rows:
+            logging.warning(
+                "candle-db returned no screened rows from %s to %s.",
+                start_date.isoformat(),
+                end_date.isoformat(),
+            )
+            return pd.DataFrame(columns=BAR_COLUMNS)
+        return normalize_bars(pd.DataFrame(rows, columns=BAR_COLUMNS))
 
     def load_candles(
         self,

@@ -152,6 +152,73 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("t.market_cap >= %s", query)
         self.assertEqual(params, (["AAPL"], date(2026, 7, 1), date(2026, 7, 15), 1_000_000_000))
 
+    @patch("stock_gap_detector.database.dict_row", object())
+    @patch("stock_gap_detector.database.psycopg")
+    def test_load_screened_candles_queries_filtered_universe_directly(self, psycopg):
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        connection.execute.return_value.fetchall.return_value = []
+        psycopg.connect.return_value = connection
+
+        CandleDatabase("postgresql://example/candle_db").load_screened_candles(
+            date(2026, 7, 1),
+            date(2026, 7, 15),
+            min_atr_pct=0.05,
+            min_market_cap=1_000_000_000,
+        )
+
+        query, params = connection.execute.call_args.args
+        self.assertIn("t.active = true", query)
+        self.assertIn("t.atr_14_percent >= %s", query)
+        self.assertIn("t.market_cap >= %s", query)
+        self.assertNotIn("t.symbol = ANY", query)
+        self.assertEqual(params, (date(2026, 7, 1), date(2026, 7, 15), 5.0, 1_000_000_000))
+
+    def test_load_recent_candles_uses_screened_query_when_no_tickers_are_configured(self):
+        database = CandleDatabase("postgresql://example/candle_db")
+        with (
+            patch.object(CandleDatabase, "load_screened_candles", return_value=pd.DataFrame(columns=BAR_COLUMNS)) as load_screened,
+            patch.object(CandleDatabase, "load_candles") as load_candles,
+        ):
+            database.load_recent_candles(
+                tickers=(),
+                end_date=date(2026, 7, 15),
+                lookback_days=14,
+                min_atr_pct=0.05,
+                min_market_cap=1_000_000_000,
+            )
+
+        load_screened.assert_called_once_with(
+            date(2026, 7, 1),
+            date(2026, 7, 15),
+            min_atr_pct=0.05,
+            min_market_cap=1_000_000_000,
+        )
+        load_candles.assert_not_called()
+
+    def test_load_recent_candles_uses_ticker_query_when_tickers_are_configured(self):
+        database = CandleDatabase("postgresql://example/candle_db")
+        with (
+            patch.object(CandleDatabase, "load_screened_candles") as load_screened,
+            patch.object(CandleDatabase, "load_candles", return_value=pd.DataFrame(columns=BAR_COLUMNS)) as load_candles,
+        ):
+            database.load_recent_candles(
+                tickers=("AAPL", "MSFT"),
+                end_date=date(2026, 7, 15),
+                lookback_days=14,
+                min_atr_pct=0.05,
+                min_market_cap=1_000_000_000,
+            )
+
+        load_candles.assert_called_once_with(
+            ["AAPL", "MSFT"],
+            date(2026, 7, 1),
+            date(2026, 7, 15),
+            min_market_cap=1_000_000_000,
+        )
+        load_screened.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

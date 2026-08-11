@@ -32,9 +32,10 @@ def configure_logging() -> None:
 
 
 def run_once(config: Config, *, end_date: date | None = None) -> list[GapCandidate]:
+    run_started_at = time.perf_counter()
     database = CandleDatabase(config.database_url)
-    database.healthcheck()
 
+    load_started_at = time.perf_counter()
     candles = database.load_recent_candles(
         tickers=config.tickers,
         end_date=end_date,
@@ -43,7 +44,12 @@ def run_once(config: Config, *, end_date: date | None = None) -> list[GapCandida
         min_market_cap=MIN_MARKET_CAP,
     )
     ticker_count = int(candles["ticker"].nunique()) if not candles.empty else 0
-    logging.info("Loaded %s candle row(s) for %s ticker(s).", len(candles), ticker_count)
+    logging.info(
+        "Loaded %s candle row(s) for %s ticker(s) in %.2fs.",
+        len(candles),
+        ticker_count,
+        time.perf_counter() - load_started_at,
+    )
 
     detector = GapDetector(
         min_bars=config.min_bars,
@@ -51,16 +57,28 @@ def run_once(config: Config, *, end_date: date | None = None) -> list[GapCandida
         gap_limit=config.gap_limit,
         lookback_days=config.lookback_days,
     )
+    analyze_started_at = time.perf_counter()
     candidates = detector.analyze(candles)
+    logging.info("Analyzed candles in %.2fs.", time.perf_counter() - analyze_started_at)
+
+    filter_started_at = time.perf_counter()
     before_touch_filter = len(candidates)
     candidates = filter_touched_candidates(candidates)
     logging.info("Dropped %s untouched candidate(s).", before_touch_filter - len(candidates))
     before_atr_filter = len(candidates)
     candidates = filter_min_atr_pct(candidates)
     logging.info("Dropped %s candidate(s) below %.2f%% ATR.", before_atr_filter - len(candidates), MIN_ATR_PCT * 100)
+    logging.info("Filtered candidates in %.2fs.", time.perf_counter() - filter_started_at)
+
+    metadata_started_at = time.perf_counter()
     candidates = add_group_metadata(candidates, database)
+    logging.info("Loaded candidate group metadata in %.2fs.", time.perf_counter() - metadata_started_at)
+
+    write_started_at = time.perf_counter()
     write_candidates(candidates)
+    logging.info("Wrote report files in %.2fs.", time.perf_counter() - write_started_at)
     logging.info("Detector produced %s candidate(s).", len(candidates))
+    logging.info("Detector run completed in %.2fs.", time.perf_counter() - run_started_at)
     return candidates
 
 
