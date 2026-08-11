@@ -15,6 +15,7 @@ from stock_gap_detector.config import EASTERN_TZ, DiscordConfig, REPORT_FILE
 
 REPORT_INLINE_LIMIT = 1800
 TICKER_LISTS_HEADER = "## Ticker Lists"
+TICKER_LIST_LABELS = ("Near Support Gaps", "Near Resistance Gaps")
 ReportRunner = Callable[[], tuple[str, int]]
 
 
@@ -96,12 +97,13 @@ def build_gapreport_command(bot: StockGapDiscordBot, command_name: str) -> app_c
 async def send_report(channel, report_text: str, candidate_count: int, trigger: str) -> None:
     header = f"**{format_post_title()}** ({trigger})\nCandidates: `{candidate_count}`"
     ticker_lists = extract_ticker_lists_section(report_text)
-    message = format_channel_message(header, ticker_lists)
     payload = BytesIO(report_text.encode("utf-8"))
     await channel.send(
-        message,
+        f"{header}\nFull report attached.",
         file=discord.File(payload, filename=REPORT_FILE.with_suffix(".txt").name),
     )
+    for message in format_ticker_list_messages(ticker_lists):
+        await channel.send(message)
 
 
 def extract_ticker_lists_section(report_text: str) -> str:
@@ -111,11 +113,94 @@ def extract_ticker_lists_section(report_text: str) -> str:
     return f"{TICKER_LISTS_HEADER}{ticker_lists}".strip()
 
 
-def format_channel_message(header: str, ticker_lists: str) -> str:
-    message = f"{header}\n\n{ticker_lists}"
-    if len(message) <= REPORT_INLINE_LIMIT:
-        return message
-    return f"{header}\n\nTicker lists are attached because they are too long for one Discord message."
+def format_channel_messages(header: str, ticker_lists: str) -> list[str]:
+    section_messages = format_ticker_list_messages(ticker_lists)
+    first_message = f"{header}\n\n{section_messages[0]}"
+    if len(first_message) <= REPORT_INLINE_LIMIT:
+        return [first_message, *section_messages[1:]]
+
+    first_limit = REPORT_INLINE_LIMIT - len(header) - 2
+    chunks = split_message(section_messages[0], first_limit)
+    messages = [f"{header}\n\n{chunks[0]}"]
+    messages.extend(chunks[1:])
+    messages.extend(section_messages[1:])
+    return messages
+
+
+def format_ticker_list_messages(ticker_lists: str) -> list[str]:
+    sections = extract_named_ticker_sections(ticker_lists)
+    if not sections:
+        return split_message(ticker_lists)
+
+    messages: list[str] = []
+    for label in TICKER_LIST_LABELS:
+        section = sections.get(label)
+        if not section:
+            continue
+        messages.extend(split_message(section))
+    return messages or split_message(ticker_lists)
+
+
+def extract_named_ticker_sections(ticker_lists: str) -> dict[str, str]:
+    lines = ticker_lists.splitlines()
+    sections: dict[str, str] = {}
+    for index, line in enumerate(lines):
+        label = line.strip()
+        if label not in TICKER_LIST_LABELS:
+            continue
+
+        end_index = len(lines)
+        for next_index in range(index + 1, len(lines)):
+            if lines[next_index].strip() in TICKER_LIST_LABELS:
+                end_index = next_index
+                break
+        sections[label] = "\n".join(lines[index:end_index]).strip()
+    return sections
+
+
+def split_message(text: str, limit: int = REPORT_INLINE_LIMIT) -> list[str]:
+    if limit < 1:
+        raise ValueError("Message chunk limit must be at least 1.")
+
+    chunks: list[str] = []
+    current = ""
+    for line in text.splitlines():
+        remaining = line
+        while True:
+            available = limit - len(current) - (1 if current else 0)
+            if available < 1:
+                chunks.append(current)
+                current = ""
+                available = limit
+
+            part, remaining = split_line_for_available_space(remaining, available)
+            candidate = part if not current else f"{current}\n{part}"
+            if len(candidate) <= limit:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = part
+
+            if not remaining:
+                break
+            chunks.append(current)
+            current = ""
+
+    if current:
+        chunks.append(current)
+    return chunks or [""]
+
+
+def split_line_for_available_space(line: str, available: int) -> tuple[str, str]:
+    if len(line) <= available:
+        return line, ""
+    if ", " not in line:
+        return line[:available], line[available:]
+
+    split_at = line.rfind(", ", 0, available + 1)
+    if split_at <= 0:
+        return line[:available], line[available:]
+    return line[:split_at], line[split_at + 2 :]
 
 
 def format_post_title(now: datetime | None = None) -> str:
