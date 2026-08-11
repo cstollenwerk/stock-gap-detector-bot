@@ -103,8 +103,8 @@ data/gap_report.md
 
 The detector calculates active gap-up support zones and gap-down resistance
 zones using the TradingView logic in the supplied Daily Gaps script. A ticker is
-included when its latest close is within one 14-day ATR of a touched active gap,
-and the report output keeps only candidates with `ATR14% >= 5%`.
+included when its latest close is within the stored 14-day ATR of a touched active
+gap, and the report output keeps only candidates with stored `ATR14% >= 5%`.
 
 Here is the install link:
 https://discord.com/oauth2/authorize?client_id=1536559237512302672&permissions=35840&integration_type=0&scope=bot+applications.commands

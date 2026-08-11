@@ -15,7 +15,18 @@ except ImportError:  # pragma: no cover - dependency is installed in Docker.
     dict_row = None
 
 
-BAR_COLUMNS = ["date", "ticker", "open", "high", "low", "close", "adj_close", "volume"]
+BAR_COLUMNS = [
+    "date",
+    "ticker",
+    "open",
+    "high",
+    "low",
+    "close",
+    "adj_close",
+    "volume",
+    "atr_14",
+    "atr_14_percent",
+]
 MARKET_CLOSE_BUFFER = time(16, 0)
 
 
@@ -155,7 +166,9 @@ class CandleDatabase:
                     o.low::double precision AS low,
                     o.close::double precision AS close,
                     o.adj_close::double precision AS adj_close,
-                    o.volume
+                    o.volume,
+                    t.atr_14::double precision AS atr_14,
+                    t.atr_14_percent::double precision AS atr_14_percent
                 FROM tickers_ohlcv o
                 JOIN tickers t ON t.id = o.ticker_id
                 WHERE t.symbol = ANY(%s)
@@ -189,7 +202,7 @@ def normalize_bars(bars: pd.DataFrame) -> pd.DataFrame:
     normalized = bars[BAR_COLUMNS].copy()
     normalized["date"] = pd.to_datetime(normalized["date"]).dt.date.astype(str)
     normalized["ticker"] = normalized["ticker"].astype(str).str.upper()
-    for column in ["open", "high", "low", "close", "adj_close", "volume"]:
+    for column in ["open", "high", "low", "close", "adj_close", "volume", "atr_14", "atr_14_percent"]:
         normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
     normalized = normalized.dropna(subset=["date", "ticker", "open", "high", "low", "close"])
     return normalized.sort_values(["ticker", "date"]).drop_duplicates(["ticker", "date"], keep="last")

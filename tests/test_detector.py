@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from stock_gap_detector.detector import GapDetector, average_true_range
+from stock_gap_detector.detector import GapDetector
 
 
 class DetectorTests(unittest.TestCase):
@@ -44,6 +44,17 @@ class DetectorTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[0].atr_14, 5.3333, places=4)
         self.assertAlmostEqual(candidates[0].metadata["distance_to_gap"], 0.8)
         self.assertEqual(candidates[0].touch_count, 1)
+
+    def test_uses_stored_atr_instead_of_computing_from_candles(self):
+        rows = [
+            candle("2026-07-01", "AAPL", high=101, low=99, close=100, atr_14=0.5, atr_14_percent=0.5),
+            candle("2026-07-02", "AAPL", high=150, low=105, close=108, atr_14=0.5, atr_14_percent=0.5),
+            candle("2026-07-03", "AAPL", high=200, low=104, close=105.8, atr_14=0.5, atr_14_percent=0.5),
+        ]
+
+        candidates = GapDetector(min_bars=3, proximity_pct=0.01).analyze(pd.DataFrame(rows))
+
+        self.assertEqual(candidates, [])
 
     def test_detects_latest_close_near_active_resistance_gap(self):
         rows = [
@@ -109,15 +120,6 @@ class DetectorTests(unittest.TestCase):
 
         self.assertEqual(candidates, [])
 
-    def test_average_true_range_includes_gaps_from_previous_close(self):
-        rows = [
-            candle("2026-07-01", "AAPL", high=101, low=99, close=100),
-            candle("2026-07-02", "AAPL", high=110, low=105, close=108),
-            candle("2026-07-03", "AAPL", high=108, low=104, close=105.8),
-        ]
-
-        self.assertAlmostEqual(average_true_range(pd.DataFrame(rows), period=14), 5.333333333333333)
-
     def test_touch_count_increments_once_per_respected_day(self):
         rows = [
             candle("2026-07-01", "AAPL", high=101, low=99, close=100),
@@ -133,7 +135,16 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(candidates[0].metadata["touch_count"], 2)
 
 
-def candle(date: str, ticker: str, *, high: float, low: float, close: float) -> dict[str, object]:
+def candle(
+    date: str,
+    ticker: str,
+    *,
+    high: float,
+    low: float,
+    close: float,
+    atr_14: float = 5.333333333333333,
+    atr_14_percent: float = 5.333333333333333,
+) -> dict[str, object]:
     return {
         "date": date,
         "ticker": ticker,
@@ -143,6 +154,8 @@ def candle(date: str, ticker: str, *, high: float, low: float, close: float) -> 
         "close": close,
         "adj_close": close,
         "volume": 1000,
+        "atr_14": atr_14,
+        "atr_14_percent": atr_14_percent,
     }
 
 

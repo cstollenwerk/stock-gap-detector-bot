@@ -6,9 +6,6 @@ from datetime import date
 import pandas as pd
 
 
-ATR_PERIOD = 14
-
-
 @dataclass
 class ActiveGap:
     ticker: str
@@ -95,8 +92,8 @@ class GapDetector:
         latest = frame.iloc[-1]
         latest_date = str(latest["date"])
         latest_close = float(latest["close"])
-        atr_14 = average_true_range(frame, period=ATR_PERIOD)
-        atr_pct = atr_14 / latest_close if latest_close and atr_14 is not None else None
+        atr_14 = optional_float(latest.get("atr_14"))
+        atr_pct = stored_atr_pct(latest.get("atr_14_percent"))
         candidates = []
 
         for gap in active_gaps:
@@ -238,31 +235,22 @@ def distance_to_gap_pct(close: float, gap: ActiveGap) -> float:
     return distance_to_gap_value(close, gap) / close if close else 0.0
 
 
-def average_true_range(candles: pd.DataFrame, *, period: int = ATR_PERIOD) -> float | None:
-    if candles.empty:
-        return None
-
-    frame = candles.sort_values("date").reset_index(drop=True)
-    previous_close: float | None = None
-    true_ranges: list[float] = []
-
-    for high, low, close in frame[["high", "low", "close"]].itertuples(index=False, name=None):
-        high = float(high)
-        low = float(low)
-        close = float(close)
-        if previous_close is None:
-            true_range = high - low
-        else:
-            true_range = max(high - low, abs(high - previous_close), abs(low - previous_close))
-        true_ranges.append(true_range)
-        previous_close = close
-
-    if not true_ranges:
-        return None
-    return sum(true_ranges[-period:]) / min(period, len(true_ranges))
-
-
 def atr_metadata(atr_14: float | None, atr_pct: float | None) -> dict[str, float]:
     if atr_14 is None or atr_pct is None:
         return {}
     return {"atr_14": round(atr_14, 4), "atr_pct": atr_pct}
+
+
+def optional_float(value: object) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(parsed):
+        return None
+    return parsed
+
+
+def stored_atr_pct(value: object) -> float | None:
+    parsed = optional_float(value)
+    return parsed / 100 if parsed is not None else None
