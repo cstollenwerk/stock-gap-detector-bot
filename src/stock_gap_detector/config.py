@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import time
 from pathlib import Path
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 try:
     from dotenv import load_dotenv
@@ -16,6 +18,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 LOG_FILE = DATA_DIR / "stock_gap_detector.log"
 RESULTS_FILE = DATA_DIR / "gap_candidates.json"
 REPORT_FILE = DATA_DIR / "gap_report.md"
+EASTERN_TZ = ZoneInfo("America/New_York")
 
 if load_dotenv is not None:
     load_dotenv(PROJECT_ROOT / ".env", encoding="utf-8-sig")
@@ -52,6 +55,28 @@ class Config:
         )
 
 
+@dataclass(frozen=True)
+class DiscordConfig:
+    token: str
+    channel_id: int
+    guild_id: int | None = None
+    command_name: str = "gapreport"
+    report_time: time = time(hour=20, minute=0, tzinfo=EASTERN_TZ)
+
+    @classmethod
+    def from_env(cls) -> "DiscordConfig":
+        token = env_value("STOCK_GAP_DETECTOR_DISCORD_TOKEN", "DISCORD_TOKEN")
+        channel_id = env_int("STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID", 0)
+        if not token:
+            raise RuntimeError("Discord token is not set. Provide STOCK_GAP_DETECTOR_DISCORD_TOKEN.")
+        if not channel_id:
+            raise RuntimeError("Discord channel ID is not set. Provide STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID.")
+
+        guild_id = env_int("STOCK_GAP_DETECTOR_DISCORD_GUILD_ID", 0) or None
+        command_name = env_value("STOCK_GAP_DETECTOR_DISCORD_COMMAND_NAME") or "gapreport"
+        return cls(token=token, channel_id=channel_id, guild_id=guild_id, command_name=command_name)
+
+
 def env_value(*names: str) -> str:
     for name in names:
         value = os.environ.get(name, "").strip()
@@ -73,16 +98,16 @@ def database_url_from_env() -> str:
 
 
 def database_url_from_parts() -> str:
-    host = env_value("STOCK_GAP_DETECTOR_DB_HOST")
+    raw_host = env_value("STOCK_GAP_DETECTOR_DB_HOST")
     database = env_value("STOCK_GAP_DETECTOR_DB_NAME")
     user = env_value("STOCK_GAP_DETECTOR_DB_USER")
     password = env_value("STOCK_GAP_DETECTOR_DB_PASSWORD")
-    if not any([host, database, user, password]):
+    if not any([raw_host, database, user, password]):
         return ""
+    host = raw_host or "localhost"
     missing = [
         name
         for name, value in {
-            "STOCK_GAP_DETECTOR_DB_HOST": host,
             "STOCK_GAP_DETECTOR_DB_NAME": database,
             "STOCK_GAP_DETECTOR_DB_USER": user,
             "STOCK_GAP_DETECTOR_DB_PASSWORD": password,

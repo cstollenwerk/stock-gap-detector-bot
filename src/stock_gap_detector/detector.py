@@ -6,6 +6,9 @@ from datetime import date
 import pandas as pd
 
 
+ATR_PERIOD = 14
+
+
 @dataclass
 class ActiveGap:
     ticker: str
@@ -16,6 +19,7 @@ class ActiveGap:
     current_top: float
     current_bottom: float
     touched: bool = False
+    touch_count: int = 0
 
     @property
     def up(self) -> bool:
@@ -43,6 +47,12 @@ class GapCandidate:
     touched: bool
     reason: str
     metadata: dict[str, float | int | str | bool]
+    theme: str | None = None
+    sector: str | None = None
+    atr_14: float | None = None
+    atr_pct: float | None = None
+    within_one_atr: bool = False
+    touch_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -73,7 +83,7 @@ class GapDetector:
         return candidates
 
     def analyze_ticker(self, ticker: str, candles: pd.DataFrame) -> list[GapCandidate]:
-        """Return active gap zones whose latest close is within the configured distance."""
+        """Return active gap zones whose latest close is within one 14-day ATR."""
         if len(candles) < self.min_bars:
             return []
 
@@ -85,14 +95,18 @@ class GapDetector:
         latest = frame.iloc[-1]
         latest_date = str(latest["date"])
         latest_close = float(latest["close"])
+        atr_14 = average_true_range(frame, period=ATR_PERIOD)
+        atr_pct = atr_14 / latest_close if latest_close and atr_14 is not None else None
         candidates = []
 
         for gap in active_gaps:
             if gap.gap_date.isoformat() == latest_date:
                 continue
 
-            distance_pct = distance_to_gap_pct(latest_close, gap)
-            if distance_pct <= 0 or distance_pct > self.proximity_pct:
+            distance_to_gap = distance_to_gap_value(latest_close, gap)
+            distance_pct = distance_to_gap / latest_close if latest_close else 0.0
+            within_one_atr = atr_14 is not None and distance_to_gap <= atr_14
+            if not within_one_atr:
                 continue
 
             candidates.append(
@@ -106,15 +120,23 @@ class GapDetector:
                     gap_bottom=round(gap.current_bottom, 4),
                     distance_pct=distance_pct,
                     touched=gap.touched,
-                    reason=f"latest close is within {self.proximity_pct:.2%} of an active {gap.kind} gap",
+                    reason=f"latest close is within one 14-day ATR of an active {gap.kind} gap",
                     metadata={
                         "gap_midpoint": round(gap.midpoint, 4),
                         "original_top": round(gap.original_top, 4),
                         "original_bottom": round(gap.original_bottom, 4),
                         "gap_width_pct": gap.width_pct,
                         "distance_pct": distance_pct,
+                        "distance_to_gap": round(distance_to_gap, 4),
                         "touched": gap.touched,
+                        "touch_count": gap.touch_count,
+                        "within_one_atr": within_one_atr,
+                        **atr_metadata(atr_14, atr_pct),
                     },
+                    atr_14=round(atr_14, 4) if atr_14 is not None else None,
+                    atr_pct=atr_pct,
+                    within_one_atr=within_one_atr,
+                    touch_count=gap.touch_count,
                 )
             )
 
@@ -191,6 +213,7 @@ def process_gap(
             gap.current_top = close
         if low <= gap.current_top:
             gap.touched = True
+            gap.touch_count += 1
     else:
         if close >= gap.original_top:
             return None
@@ -198,13 +221,48 @@ def process_gap(
             gap.current_bottom = close
         if high >= gap.current_bottom:
             gap.touched = True
+            gap.touch_count += 1
 
     return gap
 
 
-def distance_to_gap_pct(close: float, gap: ActiveGap) -> float:
+def distance_to_gap_value(close: float, gap: ActiveGap) -> float:
     if gap.current_bottom <= close <= gap.current_top:
         return 0.0
     if close > gap.current_top:
-        return abs(close - gap.current_top) / close
-    return abs(gap.current_bottom - close) / close
+        return abs(close - gap.current_top)
+    return abs(gap.current_bottom - close)
+
+
+def distance_to_gap_pct(close: float, gap: ActiveGap) -> float:
+    return distance_to_gap_value(close, gap) / close if close else 0.0
+
+
+def average_true_range(candles: pd.DataFrame, *, period: int = ATR_PERIOD) -> float | None:
+    if candles.empty:
+        return None
+
+    frame = candles.sort_values("date").reset_index(drop=True)
+    previous_close: float | None = None
+    true_ranges: list[float] = []
+
+    for high, low, close in frame[["high", "low", "close"]].itertuples(index=False, name=None):
+        high = float(high)
+        low = float(low)
+        close = float(close)
+        if previous_close is None:
+            true_range = high - low
+        else:
+            true_range = max(high - low, abs(high - previous_close), abs(low - previous_close))
+        true_ranges.append(true_range)
+        previous_close = close
+
+    if not true_ranges:
+        return None
+    return sum(true_ranges[-period:]) / min(period, len(true_ranges))
+
+
+def atr_metadata(atr_14: float | None, atr_pct: float | None) -> dict[str, float]:
+    if atr_14 is None or atr_pct is None:
+        return {}
+    return {"atr_14": round(atr_14, 4), "atr_pct": atr_pct}

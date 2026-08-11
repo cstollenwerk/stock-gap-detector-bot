@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pandas as pd
 
-from stock_gap_detector.database import BAR_COLUMNS, CandleDatabase, latest_completed_trading_day, normalize_bars
+from stock_gap_detector.database import BAR_COLUMNS, CandleDatabase, TickerGroup, latest_completed_trading_day, normalize_bars
 
 
 class DatabaseTests(unittest.TestCase):
@@ -59,6 +59,29 @@ class DatabaseTests(unittest.TestCase):
         tickers = CandleDatabase("postgresql://example/candle_db").load_active_tickers()
 
         self.assertEqual(tickers, ["AAPL", "MSFT"])
+
+    @patch("stock_gap_detector.database.dict_row", object())
+    @patch("stock_gap_detector.database.psycopg")
+    def test_load_ticker_groups_reads_primary_theme_and_sector(self, psycopg):
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        connection.execute.return_value.fetchall.return_value = [
+            {"ticker": "NVDA", "theme": "MAG 7", "sector": "AI Infrastructure"},
+            {"ticker": "NVDA", "theme": "SEMI - AI & ACCELERATORS", "sector": "Semiconductors"},
+            {"ticker": "VRT", "theme": "DATA CENTER COOLING", "sector": "AI Infrastructure"},
+        ]
+        psycopg.connect.return_value = connection
+
+        groups = CandleDatabase("postgresql://example/candle_db").load_ticker_groups(["NVDA", "VRT"])
+
+        self.assertEqual(
+            groups,
+            {
+                "NVDA": TickerGroup(theme="MAG 7", sector="AI Infrastructure"),
+                "VRT": TickerGroup(theme="DATA CENTER COOLING", sector="AI Infrastructure"),
+            },
+        )
 
     @patch("stock_gap_detector.database.dict_row", object())
     @patch("stock_gap_detector.database.psycopg")

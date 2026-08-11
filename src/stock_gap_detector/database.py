@@ -20,6 +20,12 @@ MARKET_CLOSE_BUFFER = time(16, 0)
 
 
 @dataclass(frozen=True)
+class TickerGroup:
+    theme: str
+    sector: str | None = None
+
+
+@dataclass(frozen=True)
 class CandleDatabase:
     database_url: str
 
@@ -38,6 +44,50 @@ class CandleDatabase:
                 """
             ).fetchall()
         return [str(row["symbol"]).strip().upper() for row in rows if str(row["symbol"]).strip()]
+
+    def load_ticker_groups(self, tickers: list[str] | tuple[str, ...]) -> dict[str, TickerGroup]:
+        if not tickers:
+            return {}
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                WITH parent_rollups AS (
+                    SELECT
+                        gg.child_group_id,
+                        min(parent.name) AS sector
+                    FROM groups_groups gg
+                    JOIN groups parent ON parent.id = gg.parent_group_id
+                    WHERE gg.relationship_type = 'rollup'
+                        AND parent.group_type = 'larger_group'
+                        AND (parent.ignored = false OR parent.ignored IS NULL)
+                    GROUP BY gg.child_group_id
+                )
+                SELECT
+                    t.symbol AS ticker,
+                    g.name AS theme,
+                    parent_rollups.sector
+                FROM tickers t
+                JOIN tickers_groups tg ON tg.ticker_id = t.id
+                JOIN groups g ON g.id = tg.group_id
+                LEFT JOIN parent_rollups ON parent_rollups.child_group_id = g.id
+                WHERE t.symbol = ANY(%s)
+                    AND g.group_type = 'stock_group'
+                    AND (g.ignored = false OR g.ignored IS NULL)
+                ORDER BY t.symbol, tg.is_primary DESC, g.name
+                """,
+                ([ticker.upper() for ticker in tickers],),
+            ).fetchall()
+
+        groups: dict[str, TickerGroup] = {}
+        for row in rows:
+            ticker = str(row["ticker"]).strip().upper()
+            if ticker and ticker not in groups:
+                groups[ticker] = TickerGroup(
+                    theme=str(row["theme"]).strip(),
+                    sector=str(row["sector"]).strip() if row["sector"] else None,
+                )
+        return groups
 
     def load_recent_candles(
         self,
