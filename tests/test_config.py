@@ -65,6 +65,33 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.guild_id, 456)
         self.assertTrue(config.attach_full_report)
 
+    def test_discord_config_attaches_full_report_by_default(self):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_GAP_DETECTOR_DISCORD_TOKEN": "token",
+                "STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID": "123",
+            },
+            clear=True,
+        ):
+            config = DiscordConfig.from_env()
+
+        self.assertTrue(config.attach_full_report)
+
+    def test_discord_config_can_disable_full_report_attachment(self):
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_GAP_DETECTOR_DISCORD_TOKEN": "token",
+                "STOCK_GAP_DETECTOR_DISCORD_CHANNEL_ID": "123",
+                "STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT": "false",
+            },
+            clear=True,
+        ):
+            config = DiscordConfig.from_env()
+
+        self.assertFalse(config.attach_full_report)
+
 
 if __name__ == "__main__":
     unittest.main()

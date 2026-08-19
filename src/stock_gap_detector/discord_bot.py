@@ -52,6 +52,9 @@ class StockGapDiscordBot(discord.Client):
 
     @tasks.loop()
     async def daily_report(self) -> None:
+        if not should_send_scheduled_report():
+            logging.info("Skipping scheduled report because today is not a weekday in Eastern time.")
+            return
         await self.run_and_post_report(trigger="scheduled")
 
     @daily_report.before_loop
@@ -249,6 +252,11 @@ def split_line_for_available_space(line: str, available: int) -> tuple[str, str]
 def format_post_title(now: datetime | None = None) -> str:
     post_time = now.astimezone(EASTERN_TZ) if now else datetime.now(EASTERN_TZ)
     return f"Gap Candidates for {post_time.strftime('%A %B')} {ordinal_day(post_time.day)}, {post_time.year}"
+
+
+def should_send_scheduled_report(now: datetime | None = None) -> bool:
+    report_time = now.astimezone(EASTERN_TZ) if now else datetime.now(EASTERN_TZ)
+    return report_time.weekday() < 5
 
 
 def ordinal_day(day: int) -> str:

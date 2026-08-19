@@ -11,6 +11,7 @@ from stock_gap_detector.discord_bot import (
     format_post_title,
     ordinal_day,
     send_report,
+    should_send_scheduled_report,
 )
 
 
@@ -19,6 +20,15 @@ class DiscordReportTests(unittest.IsolatedAsyncioTestCase):
         title = format_post_title(datetime(2026, 4, 17, 23, 0, tzinfo=timezone.utc))
 
         self.assertEqual(title, "Gap Candidates for Friday April 17th, 2026")
+
+    def test_should_send_scheduled_report_only_on_eastern_weekdays(self):
+        friday_evening_eastern = datetime(2026, 8, 22, 0, 30, tzinfo=timezone.utc)
+        saturday_evening_eastern = datetime(2026, 8, 23, 0, 30, tzinfo=timezone.utc)
+        sunday_evening_eastern = datetime(2026, 8, 24, 0, 30, tzinfo=timezone.utc)
+
+        self.assertTrue(should_send_scheduled_report(friday_evening_eastern))
+        self.assertFalse(should_send_scheduled_report(saturday_evening_eastern))
+        self.assertFalse(should_send_scheduled_report(sunday_evening_eastern))
 
     def test_ordinal_day_formats_suffixes(self):
         self.assertEqual(ordinal_day(1), "1st")

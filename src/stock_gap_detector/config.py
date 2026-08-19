@@ -61,7 +61,7 @@ class DiscordConfig:
     channel_id: int
     guild_id: int | None = None
     command_name: str = "gapreport"
-    attach_full_report: bool = False
+    attach_full_report: bool = True
     report_time: time = time(hour=20, minute=0, tzinfo=EASTERN_TZ)
 
     @classmethod
@@ -75,7 +75,7 @@ class DiscordConfig:
 
         guild_id = env_int("STOCK_GAP_DETECTOR_DISCORD_GUILD_ID", 0) or None
         command_name = env_value("STOCK_GAP_DETECTOR_DISCORD_COMMAND_NAME") or "gapreport"
-        attach_full_report = env_bool("STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT", False)
+        attach_full_report = env_bool("STOCK_GAP_DETECTOR_DISCORD_ATTACH_FULL_REPORT", True)
         return cls(
             token=token,
             channel_id=channel_id,
